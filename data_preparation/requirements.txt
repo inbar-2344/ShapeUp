@@ -1,0 +1,74 @@
+# ===========================================================================
+# Data-preparation pipeline dependencies.
+# Tested with Python 3.10 + CUDA 12.1 on Linux.
+#
+# IMPORTANT: a plain `pip install -r requirements.txt` is NOT enough on its own.
+# `cubvh` and `diso` are CUDA extensions compiled from source, so they need a
+# build toolchain (nvcc 12.1 + a host gcc <= 12) AND torch installed *first*.
+# Follow the ordered steps in the README ("Installation"); in short:
+#
+#   bash setup.sh                                   # Blender system libs (root)
+#   conda create -n dataprep python=3.10 -y && conda activate dataprep
+#   conda install -y -c "nvidia/label/cuda-12.1.0" cuda-toolkit
+#   conda install -y -c conda-forge gcc_linux-64=12 gxx_linux-64=12 \
+#                                   binutils_linux-64 sysroot_linux-64
+#   export CUDA_HOME="$CONDA_PREFIX" NVCC_PREPEND_FLAGS="-ccbin $CXX" \
+#          TORCH_CUDA_ARCH_LIST="8.0"               # 8.0 = A100; set to your GPU
+#   pip install "setuptools<81" wheel ninja pybind11
+#   pip install torch==2.4.0+cu121 torchvision==0.19.0+cu121 torchaudio==2.4.0+cu121
+#   pip install -r requirements.txt --no-build-isolation
+#
+# Why the extra flags:
+#   * `--no-build-isolation` lets cubvh/diso compile against the torch installed
+#     above (their build step imports torch; isolated builds can't see it).
+#   * `setuptools<81` is required: cubvh's setup.py imports `pkg_resources`,
+#     which was removed in setuptools 81.
+#
+# For a byte-exact reproduction of the original environment use
+# requirements-lock.txt instead (the same build prerequisites apply).
+# ===========================================================================
+
+# Package indexes, so the non-PyPI wheels resolve automatically:
+#   * PyTorch CUDA 12.1 wheels (the +cu121 builds below)
+#   * Blender's server, which hosts the `bpy` module wheels (NOT published on PyPI)
+--extra-index-url https://download.pytorch.org/whl/cu121
+--extra-index-url https://download.blender.org/pypi/
+
+# --- PyTorch (CUDA 12.1 build; resolved from the PyTorch index above) ---
+torch==2.4.0+cu121
+torchvision==0.19.0+cu121
+torchaudio==2.4.0+cu121
+
+# --- Numerics / data ---
+numpy==1.26.4
+scipy==1.15.3
+pandas==2.3.2
+
+# --- Mesh processing & point sampling ---
+trimesh==4.8.2
+pysdf                       # signed-distance queries: `from pysdf import SDF`
+fpsample==0.3.3             # farthest-point sampling
+open3d==0.18.0
+tqdm==4.67.1
+
+# --- Watertight conversion (Dual Marching Cubes + BVH).
+#     Both are CUDA extensions compiled from source: install AFTER torch and
+#     with `--no-build-isolation` (see header). ---
+diso==0.1.4
+cubvh @ git+https://github.com/ashawkey/cubvh@4c0de5fc7f9f836fd9c562616bdfeb77a942ba5d
+
+# --- Objaverse asset download ---
+objaverse==0.1.7
+
+# --- Headless Blender rendering (bpyrenderer backend).
+#     `bpy` 4.0.0 is NOT on PyPI for Python 3.10; it resolves from Blender's
+#     index declared above (download.blender.org/pypi). ---
+bpy==4.0.0
+imageio==2.37.0
+imageio-ffmpeg==0.6.0
+pillow==11.0.0
+# opencv-python             # optional: only if bpyrenderer's cv2 image-load path is hit
+
+# --- Local modified bpy-renderer fork (provides bpy_ops.py used by the scripts).
+#     This MUST be the local copy; the upstream package does not contain bpy_ops. ---
+-e ./bpy-renderer
