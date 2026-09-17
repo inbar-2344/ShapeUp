@@ -1,0 +1,19 @@
+{
+  "object": "fox",
+  "view_edits": {
+    "render_0000.webp": "Global - Deformation",
+    "render_0006.webp": "Parts",
+    "render_0007.webp": "Parts",
+    "render_0011.webp": "Global - Pose Change",
+    "render_0018.webp": "Parts",
+    "render_0019.webp": "Global - Pose Change"
+  },
+  "views": [
+    "render_0000.webp",
+    "render_0006.webp",
+    "render_0007.webp",
+    "render_0011.webp",
+    "render_0018.webp",
+    "render_0019.webp"
+  ]
+}
