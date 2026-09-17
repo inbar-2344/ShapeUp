@@ -1,7 +1,0 @@
-argparse
-trimesh
-tqdm
-pysdf
-fpsample
-open3d==0.18.0
-numpy==1.26.4
