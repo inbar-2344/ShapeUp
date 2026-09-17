@@ -1,0 +1,19 @@
+{
+  "object": "robot",
+  "view_edits": {
+    "render_0000.webp": "Global - Texture / Material",
+    "render_0007.webp": "Global - Texture / Material",
+    "render_0009.webp": "Global - Deformation",
+    "render_0013.webp": "Global - Texture / Material",
+    "render_0016.webp": "Global - Texture / Material",
+    "render_0019.webp": "Global - Deformation"
+  },
+  "views": [
+    "render_0000.webp",
+    "render_0007.webp",
+    "render_0009.webp",
+    "render_0013.webp",
+    "render_0016.webp",
+    "render_0019.webp"
+  ]
+}
