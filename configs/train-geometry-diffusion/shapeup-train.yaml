@@ -1,0 +1,147 @@
+# [INFO] Parameter counts for this config, measured on the instantiated system.
+#   | Name             | Type                    |  Params | Trainable
+# ---------------------------------------------------------------------
+# 0 | shape_model      | MichelangeloAutoencoder |   192 M |         0
+# 1 | visual_condition | Dinov2CLIPEncoder       |   732 M |         0
+# 2 | denoiser_model   | FluxDenoiser            |  1.35 B |    75.6 M
+# ---------------------------------------------------------------------
+# 75.6 M    Trainable params   (75,564,096)
+# 2.2 B     Non-trainable params
+# 2.27 B    Total params
+#
+# Only the adapter trains. configure() freezes shape_model and visual_condition
+# outright and freezes denoiser_model.dit_model, so what is left is:
+#   LoRA on the DiT (use_lora, rank/alpha 128)   75,497,472
+#   denoiser_model.proj_shape_condtion               66,624   [sic, spelled so in code]
+#                                               -------------
+#                                                  75,564,096
+# That total is what extract_geometry_adapter.py writes to adapter_model.safetensors.
+
+exp_root_dir: "outputs"
+name: "shapeup_geometry"
+tag: "${rmspace:visual_cfg_${system.guidance_scale_visual}+shape_cfg_${system.guidance_scale_shape}+n_part_latents_${system.n_part_latents},_}"
+#resume: <ckpt_path to resume from>
+seed: 0
+data_type: "ShapeUP-Fast-datamodule"
+data:
+  root_dir: "data"
+  validation_root_dir: "data/editing_examples"
+  motion_json_path: data/train_motion.json
+  motion_weight: 3.0  # For ~50/50 balance
+  rotate_parts: False
+  scale_parts: False
+  load_geometry: True                # whether to load geometry
+  geo_data_type: "sdf" 
+  with_sharp_data: True
+  n_samples: 32768
+  noise_sigma: 0.
+  random_flip: False # whether to randomly flip the input mesh
+  random_color_jitter: False # whether to add random color jitter to the input images
+  random_rotate: False # whether to add random rotation to the input images
+  load_image: True                # whether to load images 
+  image_type: "rgb"               # rgb, normal
+  n_views: 1
+  background_color: [255, 255, 255]        
+  batch_size: 8 # TODO: change this for your own dataset
+  num_workers: 4 # change this for your own dataset
+
+system_type: "shapeup-fast-rectified-flow-system"
+system:
+  use_lora: True
+  guidance_scale: 2.5             # only used when cfg_type == "single"
+  cfg_type: "separate_visual"     # validation + test guidance scheme (matches inference)
+  guidance_scale_shape: 2.5 # for eval
+  guidance_scale_visual: 3.5 # for eval
+  num_inference_steps: 30
+  eta: 0.0
+  n_part_latents: 1024
+
+  shape_model_type: michelangelo-autoencoder
+  shape_model:
+    pretrained_model_name_or_path: stepfun-ai/Step1X-3D
+    subfolder: Step1X-3D-Geometry-Label-1300m
+    n_samples: ${data.n_samples}
+    with_sharp_data: ${data.with_sharp_data}
+    use_downsample: true
+    num_latents: 2048
+    embed_dim: 64
+    point_feats: 3
+    out_dim: 1
+    num_freqs: 8
+    include_pi: false
+    heads: 12
+    width: 768
+    num_encoder_layers: 8
+    num_decoder_layers: 16
+    use_ln_post: true
+    init_scale: 0.25
+    qkv_bias: false
+    use_flash: true
+    use_checkpoint: false
+
+  visual_condition_type: "dinov2-clip-encoder"
+  visual_condition:
+    pretrained_dino_name_or_path: facebook/dinov2-with-registers-large
+    pretrained_clip_name_or_path: openai/clip-vit-large-patch14
+    encode_camera: false
+    n_views: ${data.n_views}
+    empty_embeds_ratio: 0.1
+    normalize_embeds: false
+    zero_uncond_embeds: true
+    image_size: 224
+
+  denoiser_model_type: "flux-denoiser"
+  denoiser_model:
+    pretrained_model_name_or_path: stepfun-ai/Step1X-3D
+    subfolder: Step1X-3D-Geometry-Label-1300m
+    input_channels: ${system.shape_model.embed_dim}
+    width: 1536
+    layers: 8
+    num_single_layers: 16
+    num_heads: 16
+    use_visual_condition: True
+    visual_condition_dim: 1024
+    n_views: ${data.n_views}
+    use_shape_condition: True
+    shape_condition_dim: ${system.shape_model.embed_dim}
+
+  noise_scheduler_type: "diffusers.schedulers.FlowMatchEulerDiscreteScheduler"
+  noise_scheduler:
+    num_train_timesteps: 1000
+    
+  denoise_scheduler_type: "diffusers.schedulers.FlowMatchEulerDiscreteScheduler"
+  denoise_scheduler:
+    num_train_timesteps: 1000
+
+  loggers:
+    wandb:
+      enable: false
+      entity: "your_wandb_entity"
+      project: "ShapeUp"
+
+  loss:
+    loss_type: "mse"
+    lambda_diffusion: 1.
+
+  optimizer:
+    name: AdamW
+    args:
+      lr: 1.e-4
+      betas: [0.9, 0.99]
+      eps: 1.e-6
+
+trainer:
+  num_nodes: 1
+  max_epochs: 100000
+  log_every_n_steps: 50
+  num_sanity_val_steps: 1
+  check_val_every_n_epoch: 7
+  enable_progress_bar: true
+  #precision: 32
+  precision: bf16-mixed
+  strategy: 'deepspeed_stage_2'
+
+checkpoint:
+  save_last: true
+  save_top_k: -1
+  every_n_train_steps: 50000

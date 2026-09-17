@@ -1,0 +1,154 @@
+# [INFO] Parameter counts for this config, measured on the instantiated system.
+#   | Name             | Type                        |  Params | Trainable
+# -------------------------------------------------------------------------
+# 0 | vae              | AutoencoderKL               |  83.7 M |         0
+# 1 | text_encoder     | CLIPTextModel               |   123 M |         0
+# 2 | text_encoder_2   | CLIPTextModelWithProjection |   695 M |         0
+# 3 | cond_encoder     | T2IAdapter                  |  81.2 M |    81.2 M
+# 4 | unet             | UNet2DConditionModel        |  3.39 B |     819 M
+# -------------------------------------------------------------------------
+# 901 M     Trainable params   (900,606,400)
+# 3.47 B    Non-trainable params
+# 4.37 B    Total params       (4,369,444,267)
+#
+# configure() freezes the VAE and both text encoders. What trains is:
+#   unet modules matching trainable_modules ["_mv", "_ref"]   819,366,400
+#   cond_encoder (train_cond_encoder: true)                    81,240,000
+#                                                            -------------
+#                                                             900,606,400
+# That total is what on_save_checkpoint writes to step1x-3d-ig2v.safetensors.
+
+name: shapeup_texture
+tag: "r768-ig2mv-ca-sdxl-ft-1"
+exp_root_dir: "outputs"
+seed: 42
+resume: null  # set to a .ckpt path to resume training
+
+data_cls: shapeup_texture.data.multiview_shapeup.MultiviewDataModule
+data:
+  root_dir: data/shape_diffusion/shapeup  # multi-view texture training dataset
+  scene_list: data/shape_diffusion/shapeup/train.json # not used, decided based on split 
+  background_color: gray
+  image_modality: color
+  num_views: 6
+  use_empty_prompt: true
+  # prompt_db_path: data/ig2mv/obajverse/objaverse_short_captions.json
+  return_prompt: true
+
+  projection_type: ORTHO
+
+  source_image_modality: ["position", "normal"]
+  position_offset: 0.5
+  position_scale: 1.0
+  reference_image_modality: color
+  motion_samples_path: data/shape_diffusion/shapeup/motion_samples.json
+  motion_oversample_factor: 3.0 
+
+  # val_indices: [-8, null]
+  # test_indices: [-8, null]
+
+  height: 768
+  width: 768
+
+  batch_size: 4
+  num_workers: 8
+
+system_cls: shapeup_texture.systems.ig2mv_sdxl_shapeup.IG2MVSDXLSystem
+system:
+  check_train_every_n_steps: 1000
+  cleanup_after_validation_step: true
+  cleanup_after_test_step: true
+
+  # Model / Adapter
+  pretrained_model_name_or_path: "stabilityai/stable-diffusion-xl-base-1.0"
+  pretrained_vae_name_or_path: "madebyollin/sdxl-vae-fp16-fix"
+  # Base IG2MV adapter, fetched from the Hub on first use and cached.
+  pretrained_adapter_name_or_path: "stepfun-ai/Step1X-3D"
+  pretrained_adapter_subfolder: "Step1X-3D-Texture"
+  pretrained_adapter_weight_name: "step1x-3d-ig2v.safetensors"
+  init_adapter_kwargs:
+    # Multi-view adapter
+    self_attn_processor: "shapeup_texture.models.attention_processor.DecoupledMVRowColSelfAttnProcessor2_0"
+    # Condition encoder
+    cond_in_channels: 6
+    # For training
+    copy_attn_weights: true
+    zero_init_module_keys: ["to_out_mv", "to_out_ref"]
+
+  # Training
+  train_cond_encoder: true
+  trainable_modules: ["_mv", "_ref"]
+  gradient_checkpointing: true 
+  prompt_drop_prob: 0.1
+  image_drop_prob: 0.1
+  original_shape_drop_prob: 0.1
+  cond_drop_prob: 0.1
+
+  # Noise sampler
+  shift_noise: true
+  shift_noise_mode: interpolated
+  shift_noise_scale: 8
+
+  # Evaluation
+  eval_seed: 42
+  eval_num_inference_steps: 30
+  eval_guidance_scale: 5.0
+  eval_guidance_scale_img: 6.5
+  eval_guidance_scale_src_mv: 2.5
+  cfg_type: "separate"
+  eval_height: ${data.height}
+  eval_width: ${data.width}
+
+  # optimizer definition
+  # you can set different learning rates separately for each group of parameters, but note that if you do this you should specify EVERY trainable parameters
+  optimizer:
+    name: AdamW
+    args:
+      lr: 5e-5
+      betas: [0.9, 0.999]
+      weight_decay: 0.01
+    params:
+      cond_encoder:
+        lr: 5e-5
+      unet:
+        lr: 5e-5
+
+  scheduler:
+    name: SequentialLR
+    interval: step
+    schedulers:
+      - name: LinearLR
+        interval: step
+        args:
+          start_factor: 1e-6
+          end_factor: 1.0
+          total_iters: 2000
+      - name: ConstantLR
+        interval: step
+        args:
+          factor: 1.0
+          total_iters: 9999999
+    milestones: [2000]
+  
+  loggers:
+    wandb:
+      enable: true
+      project: "ShapeUp_texture"
+      entity: "inbars_projects"  # Replace with your wandb entity
+
+trainer:
+  max_epochs: 100000
+  log_every_n_steps: 10
+  num_sanity_val_steps: 1
+  check_val_every_n_epoch: 2 # its 7000  
+  enable_progress_bar: true
+  precision: bf16-mixed
+  gradient_clip_val: 1.0
+  strategy: ddp
+  accumulate_grad_batches: 1
+  # limit_val_batches: 0.0
+
+checkpoint:
+  save_last: true # whether to save at each validation time
+  save_top_k: -1
+  every_n_train_steps: 3000 # do not save at all for debug purpose
