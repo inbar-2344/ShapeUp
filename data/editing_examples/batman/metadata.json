@@ -1,0 +1,19 @@
+{
+  "object": "batman",
+  "view_edits": {
+    "render_0000.webp": "Parts",
+    "render_0006.webp": "Global - Pose Change",
+    "render_0007.webp": "Global - Texture / Material",
+    "render_0017.webp": "Global - Pose Change",
+    "render_0021.webp": "Global - Texture / Material",
+    "render_0022.webp": "Global - Texture / Material"
+  },
+  "views": [
+    "render_0000.webp",
+    "render_0006.webp",
+    "render_0007.webp",
+    "render_0017.webp",
+    "render_0021.webp",
+    "render_0022.webp"
+  ]
+}
